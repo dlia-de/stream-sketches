@@ -1,0 +1,13 @@
+# Spark generated data & checkpoints
+/data/
+/chk/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDE / OS  
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
