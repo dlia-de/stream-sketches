@@ -1,0 +1,40 @@
+{
+    "version": 1.14,
+    "profile": "local",
+    "paths": {
+        "landing": "landing",
+        "parquet": { "uv": "parquet/uv", "pv": "parquet/pv" },
+        "chk": { "uv": "chk/uv", "pv": "chk/pv" },
+        "queries": "queries.sql"
+    },
+    "generator": {
+        "eps": 40,
+        "pages": 12,
+        "roll_seconds": 1,
+        "jitter_pct": 0.0,
+        "offset_mins": 0,
+        "seed": 114514
+    },
+    "stream": {
+        "windowing": { "window_size": "5m", "watermark": "5m", "trigger": "10s" },
+        "io": {
+            "output_mode": "append",
+            "format": "parquet",
+            "compression": "snappy",
+            "partitioning": { "type": "time", "by": ["date", "hour"] },
+            "maxFilesPerTrigger": 100
+        }
+    },
+    "sparksession": {
+        "app_name": "STREAM-SKECTHES",
+        "partitions": 8
+    },
+    "topn": { "enabled": false, "k": 20 },
+    "dq": {
+        "check_nulls": true,
+        "check_dupe_keys": true,
+        "recent_partitions_lookback": "30m",
+        "hll_rel_err": 0.05
+    },
+    "logging": { "level": "INFO" }
+}

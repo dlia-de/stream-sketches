@@ -1,6 +1,8 @@
 # Spark generated data & checkpoints
-/data/
+/landing/
 /chk/
+/parquet/
+
 
 # Python
 __pycache__/
