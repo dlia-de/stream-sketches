@@ -18,15 +18,20 @@ def load_config() -> Dict[str, Any]:
     return cfg
 
 def to_duck_interval(s: str) -> str:
-    """'5m' -> '5 minutes', '10s' -> '10 seconds' (DuckDB INTERVAL literal)."""
-    m = re.fullmatch(r"\s*(\d+)\s*([smhdSMHD])\s*", s or "")
-    if not m:
-        return s
-    n = int(m.group(1))
-    unit = {"s":"seconds","m":"minutes","h":"hours","d":"days"}[m.group(2).lower()]
-    return f"{n} {unit}"
+    """Convert '5m' -> '5 minutes', '10s' -> '10 seconds' (DuckDB INTERVAL literal).
+    Format required: <digits><unit>, unit in {s,m,h,d}
+    """
+    t = s.strip()
+    u = t[-1].lower()
+    num = t[:-1]
+    if (len(t) < 2) or (u not in ("s", "m", "h", "d")) or (not num.isdigit()):
+        raise ValueError("Invalid interval: expected <digits><unit>, e.g., '5m'.")
+    n = int(num)
+    name_by_unit = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+    return f"{n} {name_by_unit[u]}"
 
-# ---------------------- scanners ----------------------
+
+# scanners
 
 def scan_uv(conn: duckdb.DuckDBPyConnection, path: str):
     """Create a view uv as reading all UV parquet files."""
@@ -44,7 +49,7 @@ def scan_pv(conn: duckdb.DuckDBPyConnection, path: str):
         FROM parquet_scan('{Path(path)}/**/*.parquet')
     """)
 
-# ---------------------- checks ----------------------
+# check functions
 
 def check_has_data(conn) -> Tuple[bool, str]:
     """UV/PV should not be empty."""
@@ -53,27 +58,46 @@ def check_has_data(conn) -> Tuple[bool, str]:
     ok = uv_cnt > 0 and pv_cnt > 0
     return ok, f"has_data uv={uv_cnt} pv={pv_cnt}"
 
-def check_no_nulls(conn) -> Tuple[bool, str]:
-    """No NULLs in key/value columns."""
-    uv_bad = conn.sql("SELECT COUNT(*) FROM uv WHERE window_start IS NULL OR window_end IS NULL OR uv IS NULL").fetchone()[0]
-    pv_bad = conn.sql("SELECT COUNT(*) FROM pv WHERE window_start IS NULL OR window_end IS NULL OR page_id IS NULL OR pv IS NULL").fetchone()[0]
+def check_not_nulls(conn) -> Tuple[bool, str]:
+    """Not NULLs in key/value columns."""
+    uv_bad = conn.sql("""
+        SELECT COUNT(*) 
+            FROM uv 
+            WHERE window_start IS NULL 
+            OR window_end IS NULL 
+            OR uv IS NULL
+        """).fetchone()[0]
+    pv_bad = conn.sql("""
+        SELECT COUNT(*) 
+            FROM pv WHERE 
+            window_start IS NULL 
+            OR window_end IS NULL 
+            OR page_id IS NULL 
+            OR pv IS NULL
+        """).fetchone()[0]
     ok = (uv_bad == 0 and pv_bad == 0)
     return ok, f"no_nulls uv_bad={uv_bad} pv_bad={pv_bad}"
 
 def check_no_duplicates(conn) -> Tuple[bool, str]:
     """Each window has at most one UV row; PV has at most one row per (window,page_id)."""
     uv_dupe = conn.sql("""
-        SELECT COUNT(*) FROM (
-          SELECT window_start, window_end, COUNT(*) c FROM uv
-          GROUP BY 1,2 HAVING COUNT(*) > 1
-        )
-    """).fetchone()[0]
+        SELECT COUNT(*) 
+            FROM (
+            SELECT window_start, window_end, COUNT(*) c 
+                FROM uv
+                GROUP BY window_start, window_end 
+                HAVING COUNT(*) > 1
+            )
+        """).fetchone()[0]
     pv_dupe = conn.sql("""
-        SELECT COUNT(*) FROM (
-          SELECT window_start, window_end, page_id, COUNT(*) c FROM pv
-          GROUP BY 1,2,3 HAVING COUNT(*) > 1
-        )
-    """).fetchone()[0]
+        SELECT COUNT(*) 
+            FROM (
+            SELECT window_start, window_end, page_id, COUNT(*) c 
+                FROM pv
+                GROUP BY window_start, window_end, page_id
+                HAVING COUNT(*) > 1
+            )
+        """).fetchone()[0]
     ok = (uv_dupe == 0 and pv_dupe == 0)
     return ok, f"no_duplicates uv_dupe={uv_dupe} pv_dupe={pv_dupe}"
 
@@ -107,7 +131,7 @@ def check_values_non_negative(conn) -> Tuple[bool, str]:
     ok = (uv_bad == 0 and pv_bad == 0)
     return ok, f"non_negative uv_bad={uv_bad} pv_bad={pv_bad}"
 
-# ---------------------- main ----------------------
+# main
 
 def main() -> int:
     cfg = load_config()
@@ -115,7 +139,7 @@ def main() -> int:
     pv_path = cfg["paths"]["parquet"]["pv"]
     lookback = cfg["dq"].get("recent_partitions_lookback", "30m")
 
-    # quick existence check
+    # check
     if not any(Path(uv_path).rglob("*.parquet")) or not any(Path(pv_path).rglob("*.parquet")):
         print("[DQ] No parquet files found yet (uv/pv). Produce some data first.", file=sys.stderr)
         return 1
@@ -125,11 +149,11 @@ def main() -> int:
     scan_pv(conn, pv_path)
 
     checks = [
-        ("has_data",                check_has_data),
-        ("no_nulls",                check_no_nulls),
-        ("no_duplicates",           check_no_duplicates),
-        ("recent_window_coverage",  lambda c: check_recent_window_coverage(c, lookback)),
-        ("non_negative",            check_values_non_negative),
+        ("has_data", check_has_data),
+        ("no_nulls", check_not_nulls),
+        ("no_duplicates", check_no_duplicates),
+        ("recent_window_coverage", lambda c: check_recent_window_coverage(c, lookback)),
+        ("non_negative", check_values_non_negative),
     ]
 
     failures: List[str] = []
@@ -148,4 +172,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Exit with main return value so shell can detect failure (return 1)
     sys.exit(main())
