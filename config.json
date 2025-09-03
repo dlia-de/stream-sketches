@@ -3,9 +3,8 @@
     "profile": "local",
     "paths": {
         "landing": "landing",
-        "parquet": { "uv": "parquet/uv", "pv": "parquet/pv" },
-        "chk": { "uv": "chk/uv", "pv": "chk/pv" },
-        "queries": "queries.sql"
+        "parquet": { "uv": "parquet/uv", "pv": "parquet/pv", "topn": "parquet/topn" },
+        "chk": { "uv": "chk/uv", "pv": "chk/pv" }
     },
     "generator": {
         "eps": 40,
@@ -29,7 +28,7 @@
         "app_name": "STREAM-SKECTHES",
         "partitions": 8
     },
-    "topn": { "enabled": false, "k": 20 },
+    "topn": { "k": 20 },
     "dq": {
         "check_nulls": true,
         "check_dupe_keys": true,
